@@ -20,6 +20,9 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
+from scene.stable_diffusion import StableDiffusion
+from typing import List, Union
+
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
 try:
@@ -47,7 +50,11 @@ class GaussianModel:
         self.rotation_activation = torch.nn.functional.normalize
 
 
-    def __init__(self, sh_degree, optimizer_type="default"):
+    def __init__(self, sh_degree, optimizer_type="default", text=None):
+        if text is None:
+            text = "vanila ice cream scoop"
+        self.i = 0
+        self.text = text
         self.active_sh_degree = 0
         self.optimizer_type = optimizer_type
         self.max_sh_degree = sh_degree  
@@ -63,8 +70,35 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
+        self.device = "cuda"
+        self.diffusion_name = 'CompVis/stable-diffusion-v1-4'
+        self.diffusion_model = self.init_diffusion()
         self.setup_functions()
 
+    def init_diffusion(self) -> StableDiffusion:
+        diffusion_model = StableDiffusion(self.device, model_name=self.diffusion_name,
+                                          concept_name=None,
+                                          latent_mode=False)
+        for p in diffusion_model.parameters():
+            p.requires_grad = False
+        return diffusion_model
+
+    def calc_text_embeddings(self) -> Union[torch.Tensor, List[torch.Tensor]]:
+        ref_text = self.text
+        text_z = []
+        n = 100
+        # z = np.linspace(0, 180 , n)
+
+        d = ['front', 'side', 'back', 'side']
+        text = f"{ref_text}, {d[self.i // (n//4)]} view"
+            # text_z.append(self.diffusion_model.get_text_embeds([text]))
+        # for  in ['front', 'side', 'back', 'side', 'overhead', 'bottom']:
+        # text = f"{ref_text}, {z[self.i]} angles horizontal view"
+            # text_z.append(self.diffusion_model.get_text_embeds([text]))
+        self.i += 1 
+        self.i = self.i % n
+        return self.diffusion_model.get_text_embeds([text])
+    
     def capture(self):
         return (
             self.active_sh_degree,
